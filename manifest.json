@@ -1,21 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Reset Flow Auditor",
+  "name": "Reset Flow Auditor (Localhost Only)",
   "version": "1.0.0",
-  "description": "Cyber-themed audit harness for authorized reset-flow validation on approved URLs.",
+  "description": "Educational audit tool for TranslatePress CVE-2026-19632 (localhost testing only).",
   "permissions": [
-    "storage",
-    "tabs",
-    "cookies",
-    "scripting",
-    "activeTab"
+    "storage"
   ],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "http://0.0.0.0/*"
   ],
   "action": {
     "default_title": "Reset Flow Auditor",
     "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
   }
 }

