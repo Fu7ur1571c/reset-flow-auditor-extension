@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Reset Flow Auditor",
+  "version": "1.0.0",
+  "description": "Cyber-themed audit harness for authorized reset-flow validation on approved URLs.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "cookies",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_title": "Reset Flow Auditor",
+    "default_popup": "popup.html"
+  }
+}

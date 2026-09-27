@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reset Flow Auditor</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-wrap">
+          <div class="brand-mark">R</div>
+          <div>
+            <div class="eyebrow">SECURITY</div>
+            <div class="title">Reset Flow Auditor</div>
+          </div>
+        </div>
+        <div class="status-pill" id="statusPill">READY</div>
+      </header>
+
+      <main class="content">
+        <label class="field-label" for="urlInput">Authorized target URLs</label>
+        <textarea id="urlInput" rows="12" spellcheck="false" placeholder="https://site.example.com&#10;https://partner.example.net"></textarea>
+
+        <div class="toolbar">
+          <button id="loadBtn" class="secondary-btn">Load</button>
+          <button id="clearBtn" class="ghost-btn">Clear</button>
+          <button id="runBtn" class="primary-btn">Run Audit</button>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Targets</span>
+            <strong id="targetCount">0</strong>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Mode</span>
+            <strong>Consent-Gated</strong>
+          </div>
+        </div>
+      </main>
+
+      <section class="results-panel">
+        <div class="panel-heading">
+          <span>Execution Log</span>
+        </div>
+        <div id="resultsBox" class="results-box">
+          <div class="empty-state">No execution yet.</div>
+        </div>
+      </section>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
